@@ -6,8 +6,19 @@ This repository is just for testing myself, using AI to increase the velocity an
 * Gradio framework version 4.44.1
 * Ollama with model: gemma3:4b
 
+# Latest features
+* Ability to create a custom character with name and System Prompt
+* Ability to switch between characters
+* Ability to edit the system prompt of a character
+* Ability to show text as a message
+
 # Next features
-Expected to add features to create custom avatars using stable diffusion and generate images in the chat while chatting
+Expected to add the following features in the future
+* Show avatar for each chat
+* Create custom avatars using stable diffusion
+* Generate images in the chat while chatting, automatically
+* Create character appearance and scenario with a single photo
+* Create an embedding to use, with a photo, that keeps consistent with the character
 
 # How to run
 * Make sure you have Ollama running
