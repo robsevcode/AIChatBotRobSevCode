@@ -17,7 +17,6 @@ This repository is just for testing myself, using AI to increase the velocity an
 
 # Next features
 Expected to add the following features in the future:
-* Show avatar for each chat
 * Create custom avatars using stable diffusion
 * Generate images in the chat while chatting, automatically
 * Accepts attachment and react to the media
