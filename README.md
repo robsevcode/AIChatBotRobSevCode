@@ -24,6 +24,7 @@ Expected to add the following features in the future:
 * Ask for character to generate media
 * Create character appearance and scenario with a single photo
 * Create an embedding to use, with a photo, that keeps consistent with the character
+* Databse for faster export and modification
 
 # How to run
 * Make sure you have Ollama running
