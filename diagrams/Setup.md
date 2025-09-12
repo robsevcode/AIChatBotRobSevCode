@@ -1,9 +1,12 @@
+```mermaid
 sequenceDiagram
     participant Main
     participant build_chat_ui
     participant load_last_chat
     participant load_index
     participant load_chat
+
+    Title: Setup the UI for the first time
 
       Main-->>build_chat_ui: Builds the whole chat UI
       build_chat_ui-->>load_last_chat: Retrieve the last character chat
@@ -29,3 +32,6 @@ sequenceDiagram
       else If no last chat is available
           build_chat_ui-->>build_chat_ui: Select an empty character
       end
+
+    
+``` 
