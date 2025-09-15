@@ -1,16 +1,23 @@
-import requests
 import json
 import os
 import re
+import shutil
 from datetime import datetime
+import ollama
+from ollama import chat_with_ollama
 
 # Paths
 CHAT_FOLDER = "chat_data"
 INDEX_FILE = os.path.join(CHAT_FOLDER, "chats_index.json")
 LAST_CHAT_FILE = "last_chat.json"
+BACKUP_FOLDER = "backup"
+BACKUP_CHAT_FOLDER = "backup/chat_data"
+
 
 # Ensure folder exists
 os.makedirs(CHAT_FOLDER, exist_ok=True)
+os.makedirs(BACKUP_FOLDER, exist_ok=True)
+os.makedirs(BACKUP_CHAT_FOLDER, exist_ok=True)
 
 # ------------------------
 # Utilities
@@ -29,31 +36,45 @@ def italics_to_bold(text: str) -> str:
 # ------------------------
 
 def load_index():
+    print("Retrieving all characters info...")
     if not os.path.exists(INDEX_FILE):
         return {}
     with open(INDEX_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_index(index):
+def save_index(name, character_info, index=None):
+    print("Saving info of character: ", name)
+    if index is None:
+        index = load_index()
+    index[name] = character_info
     with open(INDEX_FILE, "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2)
 
-def list_chats():
-    index = load_index()
-    return list(index.keys())
+def remove_from_index(name, index):
+    print("Removing character from index: ", name)
+    del index[name]
+    with open(INDEX_FILE, "w", encoding="utf-8") as f:
+        json.dump(index, f, indent=2)
+    return index
 
 # ------------------------
 # Last chat tracking
 # ------------------------
 
-def save_last_chat(chat_name: str):
+def save_last_chat(name: str):
+    print("Saving last chat of: ", name)
     with open(LAST_CHAT_FILE, "w", encoding="utf-8") as f:
-        json.dump({"last_chat": chat_name}, f)
+        json.dump({"last_chat": name}, f)
+
+def reset_last_chat(default_chat="Default Chat"):
+    save_last_chat(default_chat)
+    return default_chat
 
 def load_last_chat():
     if os.path.exists(LAST_CHAT_FILE):
         with open(LAST_CHAT_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+            print("Last chat was: ", data.get("last_chat", ""))
         return data.get("last_chat", "")
     return ""
 
@@ -61,120 +82,53 @@ def load_last_chat():
 # Chat persistence
 # ------------------------
 
-def load_chats():
-    """Load all chats from the old single-file or folder-based storage into the global `chats` dict."""
-    global chats
-    # Load from folder-based structure
-    index = load_index()
-    chats = {}
-    for name in index:
-        chat_data = load_chat(name)
-        if chat_data:
-            chats[name] = chat_data
+def load_chat(name: str, character=None):
+    if character is None:
+        index = load_index()
+        character = index[name]
 
-def load_chat(name: str):
-    index = load_index()
-    if name not in index:
-        return {"system_prompt": "", "history": []}
+    file_path = os.path.join(CHAT_FOLDER, character["file"])
     
-    file_path = os.path.join(CHAT_FOLDER, index[name]["file"])
-    if not os.path.exists(file_path):
-        return {"system_prompt": "", "history": []}
-    
-    with open(file_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    # Ensure chat_data always exists
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            chat_data = json.load(f)
+            print("Chat data for ", name, " has been loaded")
+    else:
+        chat_data = {"system_prompt": "", "history": []}
+    return chat_data
 
 def save_chat(name: str, chat_data: dict):
-    index = load_index()
-    file_name = f"{name}.json"
-    file_path = os.path.join(CHAT_FOLDER, file_name)
+    print("Saving character chat: ", name)
+    file_path = os.path.join(CHAT_FOLDER, f"{name}.json")
+    chat_data["timestamp"] = datetime.now().isoformat()
 
-    # Save chat file
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(chat_data, f, indent=2, ensure_ascii=False)
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(chat_data, f, indent=2, ensure_ascii=False)
+    except Exception as ex:
+        print("FAIL", ex)
+    print("Saved succesfully")
 
-    # Update index
-    index[name] = {
-        "file": file_name,
-        "system_prompt": chat_data.get("system_prompt", ""),
-        "last_updated": datetime.now().isoformat()
-    }
-    save_index(index)
+def remove_chat(name, index):
+    # Save as backup chat file
+    chat_file = index[name].get("file")
+    system_prompt = index[name].get("system_prompt", "")
 
-def add_chat(name: str, system_prompt: str = ""):
-    """Create a new chat and save it."""
-    chat_data = {"system_prompt": system_prompt, "history": []}
-    save_chat(name, chat_data)
+    chat_data = load_chat(name, index[name])
+    chat_data["system_prompt"] = system_prompt
 
-# ------------------------
-# History helpers
-# ------------------------
-
-def normalize_history_for_ui(history):
-    """
-    Normalize history into list[dict] for Gradio Chatbot(type="messages").
-    Handles both tuple-style [(user, bot)] and dict-style [{"role":..., "content":...}]
-    """
-    messages = []
-    for item in history:
-        if isinstance(item, (tuple, list)) and len(item) == 2:
-            messages.append({"role": "user", "content": italics_to_bold(item[0])})
-            messages.append({"role": "assistant", "content": italics_to_bold(item[1])})
-        elif isinstance(item, dict):
-            if "role" in item and "content" in item:
-                messages.append(item)
-    return messages
+    if os.path.exists(os.path.join("chat_data", chat_file)):
+        shutil.move(os.path.join(CHAT_FOLDER, chat_file), os.path.join(BACKUP_CHAT_FOLDER, chat_file))
+    else:
+        print("File does not exist to delete!")
 
 # ------------------------
 # Ollama backend
 # ------------------------
 
 def make_chat_fn(system_prompt, history):
-    def chat_with_ollama(message, history_input):
-        url = "http://localhost:11434/api/chat"
-        payload = {"model": "hf.co/ArliAI/Mistral-Nemo-12B-ArliAI-RPMax-v1.1-GGUF:Q4_K_M", "messages": []}
-
-        # Add system prompt
-        if system_prompt:
-            payload["messages"].append({"role": "system", "content": system_prompt})
-
-        # Add history
-        for item in history_input:
-            if isinstance(item, (tuple, list)) and len(item) == 2:
-                payload["messages"].append({"role": "user", "content": italics_to_bold(item[0])})
-                payload["messages"].append({"role": "assistant", "content": italics_to_bold(item[1])})
-            elif isinstance(item, dict):
-                if "role" in item and "content" in item:
-                    payload["messages"].append(item)
-
-        # Add latest user message
-        payload["messages"].append({"role": "user", "content": message})
-
-        response = requests.post(url, json=payload, stream=True)
-
-        bot_reply = ""
-        for line in response.iter_lines():
-            if line:
-                data = line.decode("utf-8")
-                if '"message":' in data:
-                    try:
-                        obj = json.loads(data)
-                        bot_reply += obj["message"]["content"]
-
-                        # Yield partial update
-                        temp_history = history + [(message, bot_reply)]
-                        yield normalize_history_for_ui(temp_history)
-                    except:
-                        pass
-
-        # Save final result
-        history_input.append({"role": "user", "content": message})
-        history_input.append({"role": "assistant", "content": bot_reply})
-
-        # Persist to file
-        chat_data = {"system_prompt": system_prompt, "history": history_input}
-        # Need the active chat name from UI to save properly
-        # UI should pass the active chat name when calling save_chat()
-        yield normalize_history_for_ui(history)
-
-    return chat_with_ollama
+    print("Making chat")
+    def generator(history_input):
+        return ollama.chat_with_ollama(system_prompt, history, history_input)
+    return generator
