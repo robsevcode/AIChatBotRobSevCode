@@ -5,19 +5,35 @@ This repository is just for testing myself, using AI to increase the velocity an
 
 
 # Technologies used
-* Python 3.11.4
-* Gradio framework version 4.44.1
-* Ollama with model: gemma3:4b
+* Python
+  * Version: 3.11.4
+* Gradio framework
+  * Version: 4.44.1
+* Ollama with models:
+  * gemma3:4b
+  * hf.co/ArliAI/Mistral-Nemo-12B-ArliAI-RPMax-v1.1-GGUF:Q4_K_M
+* Stable Diffusion with Automatic1111. Some requirements are needed
+  * Checkpoints:
+    * absolutereality_v181.safetensors [463d6a9fe8]
+    * grandmix_v20.safetensors [a0a3f1bf9d]
+  * Extensions:
+    * Adetailer
+  * Loras:
+    * BadDream
+    * UnrealisticDream
+    * DarkLighting
+    * InstantPhotoX3
+    * add_detail
 
 # Latest features
 * Ability to create a custom character with name and System Prompt
 * Ability to switch between characters
 * Ability to edit the system prompt of a character
 * Ability to show text as a message
+* Ability to create custom avatars using stable diffusion
 
 # Next features
 Expected to add the following features in the future:
-* Create custom avatars using stable diffusion
 * Generate images in the chat while chatting, automatically
 * Accepts attachment and react to the media
 * Ask for character to generate media
