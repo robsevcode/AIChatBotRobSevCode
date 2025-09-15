@@ -27,9 +27,10 @@ This repository is just for testing myself, using AI to increase the velocity an
 
 # Latest features
 * Ability to create a custom character with name and System Prompt
+* Ability to delete a character but keep any data as archive
 * Ability to switch between characters
 * Ability to edit the system prompt of a character
-* Ability to show text as a message
+* Ability to show text as a social media, with avatars
 * Ability to create custom avatars using stable diffusion
 
 # Next features
