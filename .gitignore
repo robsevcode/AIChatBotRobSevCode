@@ -1,0 +1,8 @@
+/assets
+/assets/*
+/backup
+/backup/*
+/chat_data
+/chats
+test.py
+/last_chat.json
