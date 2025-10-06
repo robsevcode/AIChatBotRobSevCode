@@ -4,6 +4,7 @@ import stable_diffusion
 import re
 import os
 import ollama
+import json
 from ollama import generate_image_prompt
 from datetime import datetime
 
@@ -174,7 +175,30 @@ def build_chat_ui():
 
 
     def clean_chat_history(history):
-        return [{"role": msg["role"], "content": msg["content"]} for msg in history if "role" in msg and "content" in msg]
+        cleaned = []
+        for msg in history:
+            if "role" not in msg or "content" not in msg:
+                continue
+
+            content = msg["content"]
+
+            # Case 1: single-element tuple (from Gradio)
+            if isinstance(content, tuple) and len(content) == 1 and isinstance(content[0], str):
+                content = {"type": "image", "path": content[0]}
+
+            # Case 2: string pointing to an image file
+            elif isinstance(content, str) and os.path.splitext(content)[1].lower() in (".png", ".jpg", ".jpeg"):
+                content = {"type": "image", "path": content}
+
+            # Case 3: already dict with type image -> leave as-is
+            elif isinstance(content, dict) and content.get("type") == "image":
+                pass
+
+            # Case 4: everything else -> leave as-is
+
+            cleaned.append({"role": msg["role"], "content": content})
+
+        return cleaned
 
     def display_user_message(message, chatbot_history):
         history = clean_chat_history(chatbot_history)
@@ -195,6 +219,30 @@ def build_chat_ui():
         index = chat_backend.load_index()
         chat_data = {"history": chatbot_history}
         chat_data["system_prompt"] = index[current_chat_name].get("system_prompt", "")
+
+        # Get the last user message
+        last_message = chatbot_history[-1]["content"] if chatbot_history else ""
+        if "show me" in last_message.lower():
+            # Get prompt to generate image
+            #prompt = ollama.generate_image_request_prompt(last_message, chat_data["system_prompt"])
+            
+            # Call your image generation method
+
+            img_path = "assets\\Paty_20250916_010533.png"
+            #img_path = stable_diffusion.generate_requested_image(current_chat_name, prompt)  # ← your method
+
+            # Append image message instead of text
+            chatbot_history.append({
+                "role": "assistant",
+                "content": {"type": "image", "path": img_path}
+            })
+
+            yield chatbot_history, ""
+
+            # Save after
+            chat_data["history"] = chatbot_history
+            chat_backend.save_chat(current_chat_name, chat_data)
+        
         backend_gen_fn = chat_backend.make_chat_fn(
             chat_data.get("system_prompt", ""),
             chat_data.get("history", [])

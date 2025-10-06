@@ -3,6 +3,7 @@ import os
 import requests
 from PIL import Image, PngImagePlugin
 from io import BytesIO
+from datetime import datetime
 
 # ------------------------
 # Stable Diffusion backend
@@ -19,7 +20,7 @@ def generate_avatar_a1111(name, system_prompt, *,
     prompt = (
         f"Portrait of {name}, {system_prompt}. "
         "photograph of a beautiful, best quality, soft lighting, masterpiece, (photorealistic:1.4), Close-up, upper body, high detail, beautiful, cinematic lighting, sharp eyes, clean background, "
-        "studio portrait, highly detailed anime style, RAW photo, 8k uhd, film grain, (low quality amateur:1.3), (fisheye lens:0.9) (bokeh:0.9)"
+        "studio portrait, RAW photo, 8k uhd, film grain, (low quality amateur:1.3), (fisheye lens:0.9) (bokeh:0.9)"
     )
 
     if negative_prompt is None:
@@ -34,8 +35,9 @@ def generate_avatar_a1111(name, system_prompt, *,
         "width": width,
         "height": height,
         "sampler_name": sampler_name,
-        "refiner_checkpoint": "grandmix_v20.safetensors [a0a3f1bf9d]",
-        "refiner_switch_at": 0.75,
+        "scheduler": "Karras",
+        #"refiner_checkpoint": "grandmix_v20.safetensors [a0a3f1bf9d]",
+        #"refiner_switch_at": 0.75,
         "alwayson_scripts": {
             "Adetailer": {
                 "args": [
@@ -49,6 +51,52 @@ def generate_avatar_a1111(name, system_prompt, *,
             }
         }
     }
+
+    return generate_image(payload, seed, name)
+
+def generate_requested_image(name, request_prompt):
+    print("Generating requested image for: ", name)
+    # 1) Build prompt
+    prompt = (
+        f"{request_prompt}. "
+        "best quality, soft lighting, masterpiece, (photorealistic:1.4), high detail, beautiful, cinematic lighting, sharp eyes, clean background, "
+        "RAW photo, 8k uhd, film grain, (low quality amateur:1.3), (fisheye lens:0.9) (bokeh:0.9)"
+    )
+
+    negative_prompt = "BadDream, UnrealisticDream, watermark, signature, logo, text, bad hands, unnatural hands, disfigured hands, extra libs, extra hands, extra legs, unrealistic"
+
+    # 2) Build payload for /sdapi/v1/txt2img
+    payload = {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "steps": 25,
+        "cfg_scale": 7,
+        "width": 512,
+        "height": 512,
+        "sampler_name": "DPM++ 2M",
+        "scheduler": "Karras",
+        #"refiner_checkpoint": "grandmix_v20.safetensors [a0a3f1bf9d]",
+        #"refiner_switch_at": 0.75,
+        "alwayson_scripts": {
+            "Adetailer": {
+                "args": [
+                    {
+                        "ad_model": "face_yolov8s.pt"
+                    },
+                    {
+                        "ad_model": "hand_yolov8n.pt"
+                    }
+                ]
+            }
+        }
+    }
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{name}_{timestamp}"
+
+    return generate_image(payload, -1, filename)
+
+def generate_image(payload, seed, name_file):
     if seed is not None:
         payload["seed"] = seed
 
@@ -68,7 +116,7 @@ def generate_avatar_a1111(name, system_prompt, *,
     # Save file
     os.makedirs(ASSETS_DIR, exist_ok=True)
     #safe_name = "".join(c for c in name if c.isalnum() or c in (" ", "_", "-")).strip().replace(" ", "_")
-    filename = f"{name}.png"
+    filename = f"{name_file}.png"
     path = os.path.join(ASSETS_DIR, filename)
     info_json = result["info"]
     metadata = PngImagePlugin.PngInfo()
