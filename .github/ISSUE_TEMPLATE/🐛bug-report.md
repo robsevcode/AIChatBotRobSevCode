@@ -1,7 +1,7 @@
 ---
-name: Improvement report
+name: "\U0001F41BBug report"
 about: Create a report to help us improve
-title: "\U0001F41BMBN: Issue"
+title: "\U0001F41BBUG: Issue"
 labels: ''
 assignees: robsevcode
 
