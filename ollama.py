@@ -1,36 +1,48 @@
 import requests
 import json
 import logging
+from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO) # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# ------------------------
+# Classes
+# ------------------------
+class Messages(BaseModel):
+    role: str
+    content: str
+
+class Payload(BaseModel):
+    messages: list[Messages] = []
+    model: str
+    stream: bool = True
 
 def chat_with_ollama(system_prompt, history, history_input):
     logging.debug("Calling Ollama")
     url = "http://localhost:11434/api/chat"
-    payload = {"model": "hf.co/ArliAI/Mistral-Nemo-12B-ArliAI-RPMax-v1.1-GGUF:Q4_K_M", "messages": []}
+    payload = Payload(model="hf.co/ArliAI/Mistral-Nemo-12B-ArliAI-RPMax-v1.1-GGUF:Q4_K_M")
 
     # Add system prompt
     if system_prompt:
-        payload["messages"].append({"role": "system", "content": system_prompt})
+        payload.messages.append(Messages(role="system", content=system_prompt))
 
     # Add history
     for message_history in history_input:
         if "role" in message_history and "content" in message_history:
-            payload["messages"].append(message_history)
+            payload.messages.append(message_history)
         
-    if payload["messages"][-1]["role"] == "assistant":
-        logging.debug("Last message was: ", payload["messages"][-1]["content"])
-        payload["messages"].pop()
-        logging.debug("New last message: ", payload["messages"][-1]["content"])
+    if payload.messages[-1].role == "assistant":
+        logging.debug("Last message was: ", payload.messages[-1].content)
+        payload.messages.pop()
+        logging.debug("New last message: ", payload.messages[-1].content)
 
     # Add latest user message
     logging.debug("Sending message to Ollama and waiting for response")
     try:
-        logging.debug(payload)
-        response = requests.post(url, json=payload, stream=True)
+        response = requests.post(url, json=payload.model_dump_json(), stream=True)
         logging.debug(response)
     except Exception as ex:
-        logging.critical("Oh no ",ex)
+        logging.critical("Error when sending message to Ollama",ex)
 
     bot_reply = ""
     for line in response.iter_lines():
@@ -58,27 +70,27 @@ def chat_with_ollama(system_prompt, history, history_input):
     # UI should pass the active chat name when calling save_chat()
     yield history
 
-def generate_image_prompt(prompt):
+def generate_image_prompt(prompt: str):
     logging.debug("Generating prompt for avatar with Ollama")
     url = "http://localhost:11434/api/chat"
-    payload = {"model": "hf.co/mradermacher/IceLemonTeaRP-32k-7b-GGUF:Q8_0", "messages": [], "stream": False}
+    payload = Payload(model="hf.co/mradermacher/IceLemonTeaRP-32k-7b-GGUF:Q8_0", stream=False)
 
     system_prompt= "You are prompter, my AI assistant that helps me creates prompts for stable diffusion, removing information not needed and "
     "focusing more on the details that can create an image, representing both obvious details like hair color, body type, race and also adapting "
     "the personality into the image, like clothes, face expressions and accesories. Focus on the photography angles, styles, composition, trying to "
     "prompt a photo like use in social media, portrait mode."
 
-    payload["messages"].append({"role": "system", "content": system_prompt})
+    payload.messages.append(Messages(role="system", content=system_prompt))
     prompt = "Generate a prompt for a stable diffusion realistic image, that defines race/etnicity, " \
     "age, hair color and style, skin tone, body type/build, eye color and any other distinctive features. " \
     "Photo angle should be a close portrait, just like an avatar for a social media. If the name of prompt is a real person or a person from the fictional world, KEEP THE NAME. Consider the following description:" + prompt + "DO NOT RESPOND ANYTHING, OTHER THAN THE PROMPT."
-    payload["messages"].append({"role": "user", "content": prompt})
+    payload.messages.append(Messages(role="user", content=prompt))
 
     # Add latest user message
     logging.debug("Sending message to Ollama and waiting for response")
     response = None
     try:
-        response = requests.post(url, json=payload, stream=False)
+        response = requests.post(url, json=payload.model_dump_json(), stream=False)
     except Exception as ex:
         logging.critical("Oh no ",ex)
 
@@ -90,14 +102,14 @@ def generate_image_prompt(prompt):
 def generate_image_request_prompt(user_prompt, character_info):
     logging.debug("Generating prompt for requested image with Ollama")
     url = "http://localhost:11434/api/chat"
-    payload = {"model": "hf.co/TheDrummer/Tiger-Gemma-9B-v2-GGUF:Q2_K", "messages": [], "stream": False}
+    payload = Payload(model="hf.co/TheDrummer/Tiger-Gemma-9B-v2-GGUF:Q2_K", stream=False)
 
     system_prompt= "You are prompter, my AI assistant that helps me creates prompts for stable diffusion, removing information not needed and "
     "focusing more on the details that can create an image, representing both obvious details like hair color, body type, race and also adapting "
     "the personality into the image, like clothes, face expressions and accesories. Focus on the photography angles, styles, composition, trying to "
     "prompt a photo like use in social media, portrait mode."
 
-    payload["messages"].append({"role": "system", "content": system_prompt})
+    payload.messages.append(Messages(role="system", content=system_prompt))
     prompt = (
         "Generate a prompt for a stable diffusion realistic image, that defines race/etnicity, " 
         "age, hair color and style, skin tone, body type/build, eye color and any other distinctive features. " 
@@ -107,7 +119,8 @@ def generate_image_request_prompt(user_prompt, character_info):
         + user_prompt
         + "DO NOT RESPOND ANYTHING, OTHER THAN THE PROMPT."
     )
-    payload["messages"].append({"role": "user", "content": prompt})
+    
+    payload.messages.append(Messages(role="role", content=prompt))
 
     # Add latest user message
     logging.debug("Sending message to Ollama and waiting for response")
