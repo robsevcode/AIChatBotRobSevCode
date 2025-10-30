@@ -2,8 +2,8 @@
 name: "\U0001F6E0️Improvement request"
 about: Suggest an improvement for this project
 title: "\U0001F6E0️IMP: Improvement summary"
-labels: ''
-assignees: ''
+labels: improvement
+assignees: robsevcode
 
 ---
 
