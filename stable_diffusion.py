@@ -1,21 +1,25 @@
 import base64
 import os
+import json
 import requests
+import logging
 from PIL import Image, PngImagePlugin
 from io import BytesIO
 from datetime import datetime
 
+logging.basicConfig(level=logging.INFO) # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
 # ------------------------
 # Stable Diffusion backend
 # ------------------------
-A1111_URL = "http://127.0.0.1:7860"   # change if different host/port
+A1111_URL = "http://127.0.0.1:7861"   # change if different host/port
 ASSETS_DIR = "assets"
 
 def generate_avatar_a1111(name, system_prompt, *,
                           width=512, height=512,
                           steps=20, cfg_scale=7.0, sampler_name="DPM++ 2M",
                           seed=-1, negative_prompt=None):
-    print("Generating image for: ", name)
+    logging.debug("Generating image for: " + name)
     # 1) Build prompt
     prompt = (
         f"Portrait of {name}, {system_prompt}. "
@@ -52,10 +56,12 @@ def generate_avatar_a1111(name, system_prompt, *,
         }
     }
 
-    return generate_image(payload, seed, name)
+    filename = "Avatar.png"
+    img, metadata = generate_image(payload, -1)
+    return save_image(img, filename, metadata, name)
 
 def generate_requested_image(name, request_prompt):
-    print("Generating requested image for: ", name)
+    logging.debug("Generating requested image for: " + name)
     # 1) Build prompt
     prompt = (
         f"{request_prompt}. "
@@ -92,38 +98,56 @@ def generate_requested_image(name, request_prompt):
     }
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{name}_{timestamp}"
+    filename = f"{name}_{timestamp}.png"
 
-    return generate_image(payload, -1, filename)
+    img, metadata = generate_image(payload, -1)
+    return save_image(img, filename, metadata, name)
 
-def generate_image(payload, seed, name_file):
+def save_image(img, filename, metadata, name):
+    try:
+        base_path = os.path.join("chat_data", name)
+        avatar_folder = os.path.join(base_path, "assets")
+        os.makedirs(avatar_folder, exist_ok=True)
+        path = os.path.join(avatar_folder, filename)
+        img.save(path, pnginfo=metadata)
+    except Exception as ex:
+        logging.critical("Image could not be saved: ", ex)
+        raise ex
+    
+    return path
+
+
+def generate_image(payload, seed):
     if seed is not None:
         payload["seed"] = seed
 
     url = f"{A1111_URL}/sdapi/v1/txt2img"
+    result = ""
 
-    resp = requests.post(url, json=payload, timeout=300)
-    resp.raise_for_status()
-    result = resp.json()
+    try:
+        resp = requests.post(url, json=payload, timeout=300)
+        resp.raise_for_status()
+        result = resp.json()
+    except Exception as ex:
+        logging.critical("Could not generate image: ", ex)
+        raise ex
 
     # result["images"] is a list of base64 PNGs
     if not result.get("images"):
+        logging.critical("No image returned from A1111")
         raise RuntimeError("No images returned from A1111")
 
-    img_b64 = result["images"][0]  # take first
-    image_bytes = base64.b64decode(img_b64.split(",", 1)[-1] if "," in img_b64 else img_b64)
+    try:
+        img_b64 = result["images"][0]  # take first
+        image_bytes = base64.b64decode(img_b64.split(",", 1)[-1] if "," in img_b64 else img_b64)
+        img = Image.open(BytesIO(image_bytes))
 
-    # Save file
-    os.makedirs(ASSETS_DIR, exist_ok=True)
-    #safe_name = "".join(c for c in name if c.isalnum() or c in (" ", "_", "-")).strip().replace(" ", "_")
-    filename = f"{name_file}.png"
-    path = os.path.join(ASSETS_DIR, filename)
-    info_json = result["info"]
-    metadata = PngImagePlugin.PngInfo()
-    metadata.add_text("parameters", info_json)
-    img = Image.open(BytesIO(image_bytes))
-    img.save(path, pnginfo=metadata)
-    # with open(path, "wb") as f:
-    #     f.write(image_bytes)
+        info_json = json.dumps(result.get("info", {}))
 
-    return path
+        metadata = PngImagePlugin.PngInfo()
+        metadata.add_text("parameters", info_json)
+        
+    except Exception as ex:
+        logging.critical("Image could not be generated: " + ex)
+
+    return img, metadata
