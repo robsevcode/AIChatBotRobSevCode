@@ -2,32 +2,38 @@ import gradio as gr
 import chat_backend
 import stable_diffusion
 import os
+import json
 import ollama
 import logging
+from gradio.components import Chatbot, ChatMessage
 from pydantic import BaseModel
 from ollama import generate_image_prompt
 from datetime import datetime
+from classes import *
 
-logging.basicConfig(level=logging.DEBUG) # DEBUG, INFO, WARNING, ERROR, CRITICAL
+logging.basicConfig(level=logging.INFO) # DEBUG, INFO, WARNING, ERROR, CRITICAL
+logger = logging.getLogger('UI') 
 
 def build_chat_ui():
+    logger.info("*** build_chat_ui ***")
     last_chat_name = chat_backend.load_last_chat_name()
     characters_list = chat_backend.load_characters_list()
 
     if last_chat_name and (last_chat_name in characters_list):
         chat_data, metadata = chat_backend.load_chat(last_chat_name)
         character_avatar_path = chat_backend.get_avatar_file_path(last_chat_name)
-        system_prompt = metadata["system_prompt"]
+        system_prompt = metadata.system_prompt
     else:
-        logging.warning("No last chat available... Setting default one...")
-        chat_data = {"system_prompt": "", "history": []}
+        logger.warning("No last chat available... Setting default one...")
+        chat_data = Chat(system_prompt= "", history= [])
         system_prompt = "You are a helpful assistant."
         last_chat_name = "Default Chat"
         character_avatar_path = "assets/default.png"
 
     # --- Saving current chat ---
     current_chat = gr.State(last_chat_name)
-    logging.debug("Setting current chat as: "+ last_chat_name)
+    logger.debug("Setting current chat as: "+ last_chat_name)
+    logger.debug(current_chat)
 
     with gr.Row():
         with gr.Column(scale=1, min_width=200) as Sidebar:
@@ -72,7 +78,7 @@ def build_chat_ui():
                 type="messages",
                 show_label=False,
                 height=700,
-                value=chat_data.get("history", []),
+                value=[msg.model_dump() for msg in chat_data.history],
                 avatar_images=("assets/user.png", character_avatar_path)  # (user, bot)
             )
             msg_box = gr.Textbox(label="Message", submit_btn = True)
@@ -82,12 +88,13 @@ def build_chat_ui():
     # ------------------------
 
     def create_character(character_name, system_prompt):
+        logger.info("*** create_character ***")
         if not character_name:
-            logging.warning("No name was added!")
+            logger.warning("No name was added!")
             gr.Warning("No name was added!")
             return
         if not system_prompt:
-            logging.warning("No personality was added!")
+            logger.warning("No personality was added!")
             gr.Warning("No personality was added!")
             return
         
@@ -107,10 +114,11 @@ def build_chat_ui():
         return gr.update(choices=list(character_list), value=character_name), gr.update(value=avatar_path)
     
     def remove_character(character_name):
-        logging.info("Deleting character: ", character_name)
+        logger.info("*** remove_character ***")
+        logger.info("Deleting character: ", character_name)
         character_list = chat_backend.load_characters_list()
         if character_name == "Default Chat":
-            logging.warning("ℹ️ Default Character cannot be removed!")
+            logger.warning("ℹ️ Default Character cannot be removed!")
             gr.Error("ℹ️ Default Character cannot be removed!")
             return gr.update(choices=list(character_list))
 
@@ -120,119 +128,104 @@ def build_chat_ui():
         chat_backend.reset_last_chat_name()
         chat_backend.remove_chat(character_name)
 
-        logging.info("Character " + character_name + " removed!")
+        logger.info("Character " + character_name + " removed!")
         gr.Info(message=f"ℹ️ Character {character_name} was removed!")
 
         return gr.update(choices=list(chat_backend.load_characters_list()))
 
     # When using the Dropdown
     def switch_chat(character_name):
+        logger.info("*** switch_chat ***")
         if not character_name:
-            logging.critical("No name found when switching characters!")
+            logger.critical("No name found when switching characters!")
             return gr.update(value=[]), "", gr.update(value="")
-        logging.debug("Switch character to:", character_name)
+        logger.debug("Switch character to:" + character_name)
 
         chat_backend.save_last_chat_name(character_name)
         chat_data, metadata = chat_backend.load_chat(character_name)
-        logging.debug("Chat data loaded for: "+character_name)
-        history = chat_data["history"]
-        system_prompt = metadata["system_prompt"]
+        logger.debug("Chat data loaded for: "+character_name)
+        history = chat_data.history
+        system_prompt = metadata.system_prompt
         character_avatar = chat_backend.get_avatar_file_path(character_name)
-        return gr.update(value=history), character_name, gr.update(value=system_prompt), gr.update(value=character_avatar), gr.update(avatar_images=("assets/user.png", character_avatar))
+        return gr.update(value=[msg.model_dump() for msg in history]), character_name, gr.update(value=system_prompt), gr.update(value=character_avatar), gr.update(avatar_images=("assets/user.png", character_avatar))
 
     def update_system_prompt(new_prompt, character_name):
+        logger.info("*** update_system_prompt ***")
         if not character_name:
             return gr.update(value="⚠️ No active chat selected")
         
-        logging.info("Updating personality of: " + character_name)
+        logger.info("Updating personality of: " + character_name)
         metadata = chat_backend.get_metadata(character_name)
-        metadata["system_prompt"] = new_prompt
+        metadata.system_prompt = new_prompt
         chat_backend.save_metadata(metadata)
         return gr.update(value=new_prompt)
-    
 
-    def clean_chat_history(history):
-        cleaned = []
-        logging.debug("Cleaning history from chat")
-        for msg in history:
-            if "role" not in msg or "content" not in msg:
-                continue
-
-            content = msg["content"]
-            # Case 1: single-element tuple (from Gradio)
-            if isinstance(content, tuple) and len(content) == 1 and isinstance(content[0], str):
-                content = {"type": "image", "path": content[0]}
-
-            # Case 2: string pointing to an image file
-            elif isinstance(content, str) and os.path.splitext(content)[1].lower() in (".png", ".jpg", ".jpeg"):
-                content = {"type": "image", "path": content}
-
-            # Case 3: already dict with type image -> leave as-is
-            elif isinstance(content, dict) and content.get("type") == "image":
-                pass
-
-            # Case 4: everything else -> leave as-is
-
-            cleaned.append({"role": msg["role"], "content": content})
-
-        return cleaned
-
-    def display_user_message(message, chatbot_history):
-        logging.debug("DISPLAY MESSAGE")
-        history = clean_chat_history(chatbot_history)
-        logging.debug("Sending new message...")
+    def display_user_message(message, history):
+        logger.info("*** display_user_message ***")
+        logger.debug("Sending new message...")
         history_with_user = history + [{"role": "user", "content": message}]
         yield history_with_user, ""
 
-    def send_message(chatbot_history, current_chat_name):
-        logging.debug("SENDING MESSAGE")
-        # 1: Clean chat history if needed
-        chatbot_history = clean_chat_history(chatbot_history)
+    def convert_chatbot_to_chatdata(chatbot_history: str) -> list[Message]:
+        logger.debug("DEF: convert_chatbot_to_chatdata")
+        messages = []
+        for message in chatbot_history:
+            if isinstance(message, ChatMessage):
+                messages.append(Message(role=message.role, content=message.content))
+            elif isinstance(message, dict):
+                messages.append(Message.model_validate(message))
+            else:
+                raise TypeError(f"Unsupported history item type: {type(message)}")
+        return messages
+
+    def send_message(chatbot_history: Chatbot, current_chat_name: str):
+        logger.info("*** send_message ***")
         
         if not current_chat_name:
-            logging.warning("No chat selected")
+            logger.warning("No chat selected")
             return chatbot_history, "⚠️ Select a chat first"
         
-        logging.debug("Sending message to: ", current_chat_name)
+        logger.debug("Sending message to: " + current_chat_name)
 
         if chatbot_history is None:
             # Consider creating a new one
-            logging.warning("No chat available for that user")
+            logger.warning("No chat available for that user")
             return chatbot_history, "⚠️ Chat data missing"
 
-        chat_data = {"history": chatbot_history}
+        chat_data_history = convert_chatbot_to_chatdata(chatbot_history)
+        logger.debug("Chat converted to chatdata")
+        logger.debug(chat_data_history)
         metadata = chat_backend.get_metadata(current_chat_name)
-        chat_data["system_prompt"] = metadata.get("system_prompt", "")
 
-        logging.debug("Getting the last chat from user")
-        last_message = chatbot_history[-1]["content"] if chatbot_history else ""
+        last_message = Message(role=chat_data_history[-1].role, content=chat_data_history[-1].content) if chatbot_history else ""
 
-        if "show me" in last_message.lower():
-            prompt = ollama.generate_image_request_prompt(last_message, chat_data["system_prompt"])
+        if "show me" in last_message.content.lower():
+            prompt = ollama.generate_image_request_prompt(last_message, metadata.system_prompt)
             img_path = stable_diffusion.generate_requested_image(current_chat_name, prompt)
-
-            chatbot_history.append({
-                "role": "assistant",
-                "content": {"type": "image", "path": img_path}
-            })
 
             #yield chatbot_history, ""
 
             # Save after
-            chat_data["history"] = chatbot_history
-            chat_backend.save_chat(current_chat_name, chat_data)
+            chat_data_history.append(Message(role="assistant", content=MessageContentMedia(type="image", path=img_path)))
+            chat_backend.save_chat(current_chat_name, Chat(history=chat_data_history))
         
         backend_gen_fn = chat_backend.make_chat_fn(
-            chat_data.get("system_prompt", ""),
-            chat_data.get("history", [])
+            metadata,
+            chat_data_history
         )
-        gen = backend_gen_fn(chat_data["history"])
+        logger.debug("Message sent with history")
+        logger.debug(chat_data_history)
+        gen = backend_gen_fn(last_message)
 
         for partial_history in gen:
             yield partial_history, ""
 
+        logger.debug("Partial")
+        logger.debug(partial_history)
+
         # Save after everything is finished, to avoid extra calls
-        chat_backend.save_chat(current_chat_name, chat_data)
+        logger.debug(chat_data_history)
+        chat_backend.save_chat(current_chat_name, Chat(history=chat_data_history))
 
     # --- Wiring ---
     create_char_btn.click(create_character, [char_name_input, system_prompt_input], [chat_list, character_image])
@@ -241,7 +234,5 @@ def build_chat_ui():
     msg_box.submit(display_user_message, inputs=[msg_box, chatbot], outputs=[chatbot, msg_box]).then(send_message, [chatbot, current_chat], [chatbot, msg_box])
     remove_button.click(remove_character, inputs=[chat_list], outputs=[chat_list])
 
-    return (
-        chat_list, chatbot, msg_box, current_chat,
-        char_name_input, system_prompt_input, create_char_btn, system_prompt_display
-    )
+    return chat_list, chatbot, msg_box, current_chat, char_name_input, system_prompt_input, create_char_btn, system_prompt_display
+    

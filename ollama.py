@@ -2,49 +2,42 @@ import requests
 import json
 import logging
 from pydantic import BaseModel
+from classes import *
 
 logging.basicConfig(level=logging.INFO) # DEBUG, INFO, WARNING, ERROR, CRITICAL
+logger = logging.getLogger('OLLAMA') 
 
-# ------------------------
-# Classes
-# ------------------------
-class Messages(BaseModel):
-    role: str
-    content: str
-
-class Payload(BaseModel):
-    messages: list[Messages] = []
-    model: str
-    stream: bool = True
-
-def chat_with_ollama(system_prompt, history, history_input):
-    logging.debug("Calling Ollama")
+def chat_with_ollama(metadata: Metadata, chat_history: list[Message], user_message: Message):
+    logger.debug("DEF: chat_with_ollama")
     url = "http://localhost:11434/api/chat"
     payload = Payload(model="hf.co/ArliAI/Mistral-Nemo-12B-ArliAI-RPMax-v1.1-GGUF:Q4_K_M")
 
+    system_prompt = metadata.system_prompt
     # Add system prompt
     if system_prompt:
-        payload.messages.append(Messages(role="system", content=system_prompt))
+        payload.messages.append(Message(role="system", content=system_prompt))
 
     # Add history
-    for message_history in history_input:
-        if "role" in message_history and "content" in message_history:
-            payload.messages.append(message_history)
+    for message in chat_history:
+        payload.messages.append(message)
         
     if payload.messages[-1].role == "assistant":
-        logging.debug("Last message was: ", payload.messages[-1].content)
+        logger.debug("Last message was: ", payload.messages[-1].content)
         payload.messages.pop()
-        logging.debug("New last message: ", payload.messages[-1].content)
+        logger.debug("New last message: ", payload.messages[-1].content)
 
     # Add latest user message
-    logging.debug("Sending message to Ollama and waiting for response")
+    logger.debug("Sending message to Ollama and waiting for response")
+    logger.debug(payload.model_dump_json())
     try:
-        response = requests.post(url, json=payload.model_dump_json(), stream=True)
-        logging.debug(response)
+        response = requests.post(url, json=payload.model_dump(), stream=True)
+        logger.debug("Ollama response")
+        logger.debug(response)
     except Exception as ex:
-        logging.critical("Error when sending message to Ollama",ex)
+        logger.critical("Error when sending message to Ollama",ex)
 
     bot_reply = ""
+    assistant_msg = Message(role="assistant", content="")  # one object for streaming
     for line in response.iter_lines():
         if line:
             data = line.decode("utf-8")
@@ -52,26 +45,28 @@ def chat_with_ollama(system_prompt, history, history_input):
                 try:
                     obj = json.loads(data)
                     bot_reply += obj["message"]["content"]
+                    assistant_msg.content = bot_reply  # update the content
 
                     # Yield partial update
-                    temp_history = history + [{"role": "assistant", "content": bot_reply}]
-                    yield temp_history
+                    temp_history = chat_history + [assistant_msg]
+                    #logger.debug(temp_history)
+                    yield [msg.model_dump() for msg in temp_history]
                 except:
                     pass
 
-    logging.debug("Full message has been sent")
+    logger.debug("Full message has been sent")
     
     # Save final result
-    history_input.append({"role": "assistant", "content": bot_reply})
+    chat_history.append(Message(role="assistant", content=bot_reply))
 
     # Persist to file
-    chat_data = {"system_prompt": system_prompt, "history": history_input}
     # Need the active chat name from UI to save properly
     # UI should pass the active chat name when calling save_chat()
-    yield history
+    logger.debug(chat_history)
+    yield [msg.model_dump() for msg in chat_history]
 
 def generate_image_prompt(prompt: str):
-    logging.debug("Generating prompt for avatar with Ollama")
+    logger.debug("Generating prompt for avatar with Ollama")
     url = "http://localhost:11434/api/chat"
     payload = Payload(model="hf.co/mradermacher/IceLemonTeaRP-32k-7b-GGUF:Q8_0", stream=False)
 
@@ -80,27 +75,27 @@ def generate_image_prompt(prompt: str):
     "the personality into the image, like clothes, face expressions and accesories. Focus on the photography angles, styles, composition, trying to "
     "prompt a photo like use in social media, portrait mode."
 
-    payload.messages.append(Messages(role="system", content=system_prompt))
+    payload.messages.append(Message(role="system", content=system_prompt))
     prompt = "Generate a prompt for a stable diffusion realistic image, that defines race/etnicity, " \
     "age, hair color and style, skin tone, body type/build, eye color and any other distinctive features. " \
     "Photo angle should be a close portrait, just like an avatar for a social media. If the name of prompt is a real person or a person from the fictional world, KEEP THE NAME. Consider the following description:" + prompt + "DO NOT RESPOND ANYTHING, OTHER THAN THE PROMPT."
-    payload.messages.append(Messages(role="user", content=prompt))
+    payload.messages.append(Message(role="user", content=prompt))
 
     # Add latest user message
-    logging.debug("Sending message to Ollama and waiting for response")
+    logger.debug("Sending message to Ollama and waiting for response")
     response = None
     try:
         response = requests.post(url, json=payload.model_dump_json(), stream=False)
     except Exception as ex:
-        logging.critical("Oh no ",ex)
+        logger.critical("Oh no ",ex)
 
     extra_prompts = ",masterpiece, (photorealistic:1.4), best quality, soft lighting, photograph, RAW photo, 8k uhd, film grain, (low quality amateur:1.3), (fisheye lens:0.9) (bokeh:0.9), slightly blurred, (morning light:0.5), (ambient occlusion:0.6), (realistic shadows), portrait photography, (social media style:0.8), (vertical composition), 85mm lens, f/2.8, ISO 400 <lora:DarkLighting:0.1> <lora:InstantPhotoX3:0.15> <lora:add_detail:1.1>"
     reponse_prompt = response.json()["message"]["content"] + extra_prompts
-    logging.debug("Full message has been sent")
+    logger.debug("Full message has been sent")
     return reponse_prompt
 
 def generate_image_request_prompt(user_prompt, character_info):
-    logging.debug("Generating prompt for requested image with Ollama")
+    logger.debug("Generating prompt for requested image with Ollama")
     url = "http://localhost:11434/api/chat"
     payload = Payload(model="hf.co/TheDrummer/Tiger-Gemma-9B-v2-GGUF:Q2_K", stream=False)
 
@@ -109,7 +104,7 @@ def generate_image_request_prompt(user_prompt, character_info):
     "the personality into the image, like clothes, face expressions and accesories. Focus on the photography angles, styles, composition, trying to "
     "prompt a photo like use in social media, portrait mode."
 
-    payload.messages.append(Messages(role="system", content=system_prompt))
+    payload.messages.append(Message(role="system", content=system_prompt))
     prompt = (
         "Generate a prompt for a stable diffusion realistic image, that defines race/etnicity, " 
         "age, hair color and style, skin tone, body type/build, eye color and any other distinctive features. " 
@@ -120,16 +115,16 @@ def generate_image_request_prompt(user_prompt, character_info):
         + "DO NOT RESPOND ANYTHING, OTHER THAN THE PROMPT."
     )
     
-    payload.messages.append(Messages(role="role", content=prompt))
+    payload.messages.append(Message(role="role", content=prompt))
 
     # Add latest user message
-    logging.debug("Sending message to Ollama and waiting for response")
+    logger.debug("Sending message to Ollama and waiting for response")
     try:
         response = requests.post(url, json=payload, stream=False)
     except Exception as ex:
-        logging.critical("Oh no ",ex)
+        logger.critical("Oh no ",ex)
 
     extra_prompts = ",masterpiece, (photorealistic:1.4), best quality, soft lighting, photograph, RAW photo, 8k uhd, film grain, (low quality amateur:1.3), (fisheye lens:0.9) (bokeh:0.9), slightly blurred, (morning light:0.5), (ambient occlusion:0.6), (realistic shadows), 85mm lens, f/2.8, ISO 400 <lora:DarkLighting:0.1> <lora:InstantPhotoX3:0.15> <lora:add_detail:1.1>"
     reponse_prompt = response.json()["message"]["content"] + extra_prompts
-    logging.debug("Full message has been sent")
+    logger.debug("Full message has been sent")
     return reponse_prompt
