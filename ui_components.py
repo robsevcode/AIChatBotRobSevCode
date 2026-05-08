@@ -4,6 +4,8 @@ import stable_diffusion
 import re
 import os
 import time
+import threading
+from queue import Queue, Empty
 import ollama
 import logging
 import settings
@@ -21,7 +23,7 @@ def italics_to_bold(text):
     text = re.sub(r'_(.*?)_', r'**\1**', text)
     return text
 
-def build_chat_ui():
+def build_chat_ui(demo=None):
     last_chat_name = chat_backend.load_last_chat_name()
     characters_list = chat_backend.get_character_list()
 
@@ -124,6 +126,7 @@ def build_chat_ui():
             chatbot = gr.Chatbot(
                 show_label=False,
                 height=700,
+                elem_id="chatbot",
                 value=history_dicts_to_chatbot(chat_data.get("history", [])),
                 avatar_images=("assets/user.png", character_avatar)  # (user, bot)
             )
@@ -254,7 +257,6 @@ def build_chat_ui():
             return
 
         chatbot_history.append({"role": "user", "content": message})
-        chatbot_history.append({"role": "assistant", "content": "Writing."})
 
         metadata = chat_backend.get_metadata(current_chat_name)
         system_prompt = metadata.get("system_prompt", "")
@@ -264,36 +266,81 @@ def build_chat_ui():
             "system_prompt": system_prompt
         }
 
-        # Show assistant placeholder immediately, clear input box
-        yield history_dicts_to_chatbot(chatbot_history), ""
+        display_history = chatbot_history + [{"role": "assistant", "content": "Writing."}]
+        yield history_dicts_to_chatbot(display_history), ""
 
         if message:
-            for placeholder in ["Writing.", "Writing..", "Writing...", "Writing.."]:
-                chatbot_history[-1]["content"] = placeholder
-                yield history_dicts_to_chatbot(chatbot_history), ""
+            for placeholder in ["Writing", "Writing.", "Writing..", "Writing..."]:
+                display_history[-1]["content"] = placeholder
+                yield history_dicts_to_chatbot(display_history), ""
                 time.sleep(0.12)
 
         if "show me" in str(message).lower():
             img_path = "assets\\Paty_20250916_010533.png"
-            chatbot_history[-1] = {
-                "role": "assistant",
-                "content": {"type": "image", "path": img_path}
-            }
-            chat_data["history"] = chatbot_history
+            final_history = chatbot_history + [{"role": "assistant", "content": {"type": "image", "path": img_path}}]
+            chat_data["history"] = final_history
             chat_backend.save_chat(current_chat_name, chat_data)
-            yield history_dicts_to_chatbot(chatbot_history), ""
+            yield history_dicts_to_chatbot(final_history), ""
             return
 
         backend_gen_fn = chat_backend.make_chat_fn(
             system_prompt,
             chatbot_history
         )
-        gen = backend_gen_fn(chatbot_history)
 
+        output_queue = Queue()
+        stop_token = object()
+
+        def backend_worker():
+            try:
+                gen = backend_gen_fn(chatbot_history)
+                for partial_history in gen:
+                    output_queue.put(partial_history)
+            except Exception as ex:
+                output_queue.put(("error", ex))
+            finally:
+                output_queue.put(stop_token)
+
+        threading.Thread(target=backend_worker, daemon=True).start()
+
+        placeholders = ["Writing", "Writing.", "Writing..", "Writing..."]
+        placeholder_index = 0
         final_history = chatbot_history
-        for partial_history in gen:
-            final_history = partial_history
-            yield history_dicts_to_chatbot(final_history), ""
+        last_word_count = 0
+        running = True
+
+        while running:
+            try:
+                item = output_queue.get(timeout=0.2)
+            except Empty:
+                display_history[-1]["content"] = placeholders[placeholder_index]
+                placeholder_index = (placeholder_index + 1) % len(placeholders)
+                yield history_dicts_to_chatbot(display_history), ""
+                continue
+
+            if item is stop_token:
+                running = False
+                continue
+
+            if isinstance(item, tuple) and item[0] == "error":
+                raise item[1]
+
+            final_history = item
+            assistant_text = ""
+            if final_history and final_history[-1].get("role") == "assistant":
+                assistant_text = final_history[-1].get("content", "")
+
+            words = assistant_text.split()
+            if words:
+                for next_word_count in range(last_word_count + 1, len(words) + 1):
+                    typing_text = " ".join(words[:next_word_count])
+                    display_history[-1]["content"] = typing_text
+                    yield history_dicts_to_chatbot(display_history), ""
+                    time.sleep(0.03)
+                last_word_count = len(words)
+            else:
+                display_history[-1]["content"] = assistant_text
+                yield history_dicts_to_chatbot(display_history), ""
 
         chat_data["history"] = final_history
         chat_backend.save_chat(current_chat_name, chat_data)
@@ -301,17 +348,29 @@ def build_chat_ui():
 
     # --- Wiring ---
     create_char_btn.click(create_character, [char_name_input, system_prompt_input], [chat_list, character_image])
-    chat_list.change(switch_chat, [chat_list], [chatbot, current_chat, system_prompt_display, character_image, chatbot])
+    chat_list.change(
+        switch_chat,
+        [chat_list],
+        [chatbot, current_chat, system_prompt_display, character_image, chatbot],
+        scroll_to_output=True,
+        show_progress="hidden"
+    )
     update_prompt_btn.click(update_system_prompt, [system_prompt_display, current_chat], [system_prompt_display])
     msg_box.submit(
         send_message,
         inputs=[msg_box, chatbot, current_chat],
         outputs=[chatbot, msg_box],
+        scroll_to_output=True,
         show_progress="hidden"
     )
     remove_button.click(remove_character, inputs=[chat_list], outputs=[chat_list])
 
     apply_button.click(settings.apply_settings, inputs=[image_style, response_type])
+
+    if demo is not None:
+        def initial_load():
+            return history_dicts_to_chatbot(chat_data.get("history", []))
+        demo.load(initial_load, outputs=[chatbot], scroll_to_output=True, show_progress="hidden")
 
     return (
         chat_list, chatbot, msg_box, current_chat,
