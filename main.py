@@ -1,5 +1,9 @@
+import logging
 import gradio as gr
 from ui_components import build_chat_ui
+import os
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 css = """
 .generating,
@@ -10,7 +14,10 @@ css = """
 }
 """
 
-with gr.Blocks(title="AI Chat bot", css=css) as demo:
+# Get the path to scrolldown.js in the same directory as this script
+js_path = os.path.join(os.path.dirname(__file__), "scrolldown.js")
+
+with gr.Blocks(title="AI Chat bot", css=css, js=js_path) as demo:
     demo.queue()
     gr.HTML("""
     <style>
@@ -86,7 +93,71 @@ with gr.Blocks(title="AI Chat bot", css=css) as demo:
         }
         </style>
     """)
-    chat_list, chatbot, msg_box, current_chat, char_name_input, system_prompt_input, create_char_btn, system_prompt_display = build_chat_ui()
+    chat_list, chatbot, msg_box, current_chat, char_name_input, system_prompt_input, create_char_btn, system_prompt_display = build_chat_ui(demo)
+
+    gr.HTML("""
+    <script>
+    function Scrolldown() {
+        const findScrollArea = (root) => {
+            if (!root) return null;
+            const candidates = Array.from(root.querySelectorAll('*')).filter(el => {
+                const style = window.getComputedStyle(el);
+                return el.scrollHeight > el.clientHeight && (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'overlay');
+            });
+            return candidates.length ? candidates[candidates.length - 1] : null;
+        };
+
+        const root = document.getElementById('chatbot');
+        if (!root) {
+            // Retry if root not found yet
+            setTimeout(Scrolldown, 500);
+            return;
+        }
+
+        let targetNode = findScrollArea(root);
+        
+        if (!targetNode) {
+            // Try again with polling
+            let attempts = 0;
+            const checkInterval = setInterval(() => {
+                targetNode = findScrollArea(root);
+                if (targetNode) {
+                    clearInterval(checkInterval);
+                    attachObserver(targetNode);
+                }
+                attempts++;
+                if (attempts > 40) {
+                    clearInterval(checkInterval);
+                }
+            }, 100);
+            return;
+        }
+
+        attachObserver(targetNode);
+    }
+
+    function attachObserver(targetNode) {
+        // Scroll to bottom immediately
+        targetNode.scrollTop = targetNode.scrollHeight;
+
+        // Set up observer to keep scrolling to bottom as new messages arrive
+        const config = { attributes: true, childList: true, subtree: true };
+        const callback = () => {
+            targetNode.scrollTop = targetNode.scrollHeight;
+        };
+        const observer = new MutationObserver(callback);
+        observer.observe(targetNode, config);
+    }
+
+    // Call Scrolldown as soon as possible
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', Scrolldown);
+    } else {
+        // Use requestAnimationFrame and setTimeout for extra safety
+        requestAnimationFrame(() => setTimeout(Scrolldown, 100));
+    }
+    </script>
+    """)
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7861)
