@@ -7,5 +7,9 @@
 test.py
 /last_chat.json
 __pycache__/*
+__pycache__/*.*
+**/__pycache__/
+**/__pycache__/*
+*.pyc
 __pycache__
 *.code-workspace
