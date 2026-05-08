@@ -220,18 +220,21 @@ def load_chat(name: str):
 
 def save_chat(name: str, chat_data: dict, metadata: dict = None):
     """Save chat data and metadata for a given character."""
-    chat_file = get_chat_file_path(name)
-    metadata_file = get_metadata_file_path(name)
+    chat_file_path = get_chat_file_path(name)
+    metadata_file_path = get_metadata_file_path(name)
+
+    os.makedirs(os.path.dirname(chat_file_path), exist_ok=True)
+    os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
 
     chat_data["timestamp"] = datetime.now().isoformat()
 
     # Save chat file
-    with open(chat_file, "w", encoding="utf-8") as f:
+    with open(chat_file_path, "w", encoding="utf-8") as f:
         json.dump(chat_data, f, indent=2, ensure_ascii=False)
 
     # Save metadata
     if metadata:
-        with open(metadata_file, "w", encoding="utf-8") as f:
+        with open(metadata_file_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
     logging.debug(f"Saved chat and metadata for {name}")

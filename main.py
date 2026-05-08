@@ -1,7 +1,17 @@
 import gradio as gr
 from ui_components import build_chat_ui
 
-with gr.Blocks(title="AI Chat bot") as demo:
+css = """
+.generating,
+.generating.svelte-zlszon.svelte-zlszon {
+    border: none !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+}
+"""
+
+with gr.Blocks(title="AI Chat bot", css=css) as demo:
+    demo.queue()
     gr.HTML("""
     <style>
     /* Resize the avatar image */
@@ -79,4 +89,4 @@ with gr.Blocks(title="AI Chat bot") as demo:
     chat_list, chatbot, msg_box, current_chat, char_name_input, system_prompt_input, create_char_btn, system_prompt_display = build_chat_ui()
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=7861)

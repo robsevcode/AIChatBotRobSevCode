@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO) # DEBUG, INFO, WARNING, ERROR, CRITICAL
 def chat_with_ollama(system_prompt, history, history_input):
     logging.debug("Calling Ollama")
     url = "http://localhost:11434/api/chat"
-    payload = {"model": "hf.co/ArliAI/Mistral-Nemo-12B-ArliAI-RPMax-v1.1-GGUF:Q4_K_M", "messages": []}
+    payload = {"model": "gemma3:4b", "messages": []}
 
     # Add system prompt
     if system_prompt:
@@ -17,46 +17,82 @@ def chat_with_ollama(system_prompt, history, history_input):
     for message_history in history_input:
         if "role" in message_history and "content" in message_history:
             payload["messages"].append(message_history)
-        
-    if payload["messages"][-1]["role"] == "assistant":
-        logging.debug("Last message was: ", payload["messages"][-1]["content"])
-        payload["messages"].pop()
-        logging.debug("New last message: ", payload["messages"][-1]["content"])
 
-    # Add latest user message
+    if payload["messages"] and payload["messages"][-1]["role"] == "assistant":
+        logging.debug("Last message was: %s", payload["messages"][-1]["content"])
+        payload["messages"].pop()
+        if payload["messages"]:
+            logging.debug("New last message: %s", payload["messages"][-1]["content"])
+
     logging.debug("Sending message to Ollama and waiting for response")
+    bot_reply = ""
+    response = None
     try:
         logging.debug(payload)
-        response = requests.post(url, json=payload, stream=True)
-        logging.debug(response)
-    except Exception as ex:
-        logging.critical("Oh no ",ex)
+        response = requests.post(url, json=payload, stream=True, timeout=60)
+        response.raise_for_status()
 
-    bot_reply = ""
-    for line in response.iter_lines():
-        if line:
-            data = line.decode("utf-8")
-            if '"message":' in data:
-                try:
-                    obj = json.loads(data)
-                    bot_reply += obj["message"]["content"]
+        for raw_line in response.iter_lines(decode_unicode=True):
+            if not raw_line:
+                continue
+            line = raw_line.decode("utf-8").strip() if isinstance(raw_line, bytes) else raw_line.strip()
+            if line == "[DONE]":
+                break
+            if line.startswith("data: "):
+                line = line[len("data: "):]
 
-                    # Yield partial update
-                    temp_history = history + [{"role": "assistant", "content": bot_reply}]
-                    yield temp_history
-                except:
-                    pass
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                logging.debug("Skipping non-JSON line from Ollama: %s", line)
+                continue
+
+            if not isinstance(obj, dict):
+                continue
+
+            message = obj.get("message") if isinstance(obj.get("message"), dict) else None
+            content_piece = ""
+            if isinstance(message, dict):
+                content_piece = message.get("content", "")
+            elif isinstance(obj.get("content"), str):
+                content_piece = obj.get("content", "")
+
+            if content_piece:
+                bot_reply += content_piece
+                partial_history = history_input + [{"role": "assistant", "content": bot_reply}]
+                yield partial_history
+
+        if not bot_reply and response is not None:
+            try:
+                text = response.text.strip()
+                for line in text.splitlines():
+                    line = line.strip()
+                    if not line or line == "[DONE]":
+                        continue
+                    if line.startswith("data: "):
+                        line = line[len("data: "):]
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(obj, dict):
+                        message = obj.get("message") if isinstance(obj.get("message"), dict) else None
+                        if isinstance(message, dict):
+                            bot_reply = message.get("content", bot_reply)
+                        elif isinstance(obj.get("content"), str):
+                            bot_reply = obj.get("content", bot_reply)
+            except Exception:
+                pass
+    except requests.RequestException as ex:
+        if response is not None:
+            logging.critical("Ollama request failed [%s]: %s", response.status_code, response.text)
+        logging.critical("Ollama API call failed", exc_info=ex)
+        bot_reply = ""
 
     logging.debug("Full message has been sent")
-    
-    # Save final result
-    history_input.append({"role": "assistant", "content": bot_reply})
 
-    # Persist to file
-    chat_data = {"system_prompt": system_prompt, "history": history_input}
-    # Need the active chat name from UI to save properly
-    # UI should pass the active chat name when calling save_chat()
-    yield history
+    history_input.append({"role": "assistant", "content": bot_reply})
+    yield history_input
 
 def generate_image_prompt(prompt):
     logging.debug("Generating prompt for avatar with Ollama")
