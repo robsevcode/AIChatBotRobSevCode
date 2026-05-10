@@ -17,7 +17,7 @@ css = """
 # Get the path to scrolldown.js in the same directory as this script
 js_path = os.path.join(os.path.dirname(__file__), "scrolldown.js")
 
-with gr.Blocks(title="AI Chat bot", css=css, js=js_path) as demo:
+with gr.Blocks(title="AI Chat bot") as demo:
     demo.queue()
     gr.HTML("""
     <style>
@@ -91,73 +91,88 @@ with gr.Blocks(title="AI Chat bot", css=css, js=js_path) as demo:
         .gradio-container .fixed-height {
         max-height: none !important;
         }
-        </style>
+    /* Hide the residual Share button for avatars/messages */
+    .gradio-container button[title="Share"],
+    .gradio-container [aria-label="Share"] {
+        display: none !important;
+    }
+    /* Hide the app-level Clear button */
+    .gradio-container button[title="Clear"],
+    .gradio-container [aria-label="Clear"] {
+        display: none !important;
+    }
+    </style>
     """)
     chat_list, chatbot, msg_box, current_chat, char_name_input, system_prompt_input, create_char_btn, system_prompt_display = build_chat_ui(demo)
 
     gr.HTML("""
     <script>
-    function Scrolldown() {
-        const findScrollArea = (root) => {
-            if (!root) return null;
-            const candidates = Array.from(root.querySelectorAll('*')).filter(el => {
-                const style = window.getComputedStyle(el);
-                return el.scrollHeight > el.clientHeight && (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'overlay');
+    function removeShareAndClearButtons() {
+        const selectors = ['button', 'a', 'input'];
+        selectors.forEach(selector => {
+            document.querySelectorAll(selector).forEach(el => {
+                const text = (el.innerText || '').trim();
+                const title = el.title || '';
+                const aria = el.getAttribute('aria-label') || '';
+                if (['Share', 'Clear'].includes(text) || ['Share', 'Clear'].includes(title) || ['Share', 'Clear'].includes(aria)) {
+                    el.style.display = 'none';
+                }
             });
-            return candidates.length ? candidates[candidates.length - 1] : null;
-        };
+        });
+    }
 
+    function Scrolldown() {
         const root = document.getElementById('chatbot');
         if (!root) {
-            // Retry if root not found yet
-            setTimeout(Scrolldown, 500);
+            setTimeout(() => { removeShareAndClearButtons(); Scrolldown(); }, 300);
             return;
         }
-
-        let targetNode = findScrollArea(root);
-        
-        if (!targetNode) {
-            // Try again with polling
-            let attempts = 0;
-            const checkInterval = setInterval(() => {
-                targetNode = findScrollArea(root);
-                if (targetNode) {
-                    clearInterval(checkInterval);
-                    attachObserver(targetNode);
-                }
-                attempts++;
-                if (attempts > 40) {
-                    clearInterval(checkInterval);
-                }
-            }, 100);
-            return;
-        }
-
-        attachObserver(targetNode);
-    }
-
-    function attachObserver(targetNode) {
-        // Scroll to bottom immediately
-        targetNode.scrollTop = targetNode.scrollHeight;
-
-        // Set up observer to keep scrolling to bottom as new messages arrive
-        const config = { attributes: true, childList: true, subtree: true };
-        const callback = () => {
-            targetNode.scrollTop = targetNode.scrollHeight;
+        const findScrollArea = () => {
+            const scrollables = Array.from(root.querySelectorAll('*')).filter(el => el.scrollHeight > el.clientHeight);
+            if (!scrollables.length) return null;
+            return scrollables.reverse().find(el => typeof el.scrollTop === 'number') || null;
         };
-        const observer = new MutationObserver(callback);
-        observer.observe(targetNode, config);
+
+        const findLatestMessage = () => {
+            return root.querySelector('.message-row:last-child, .chatbot-message:last-child, .chatbot-card:last-child, .generated-message:last-child, .message:last-child');
+        };
+
+        const scrollBottom = () => {
+            const latest = findLatestMessage();
+            if (latest) {
+                latest.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
+            }
+
+            const targetNode = findScrollArea() || root;
+            if (targetNode) {
+                targetNode.scrollTop = targetNode.scrollHeight;
+            }
+        };
+
+        scrollBottom();
+        setTimeout(scrollBottom, 100);
+        setTimeout(scrollBottom, 300);
+
+        const observer = new MutationObserver(() => {
+            removeShareAndClearButtons();
+            scrollBottom();
+        });
+        observer.observe(root, { childList: true, subtree: true });
     }
 
-    // Call Scrolldown as soon as possible
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', Scrolldown);
+        document.addEventListener('DOMContentLoaded', () => {
+            removeShareAndClearButtons();
+            Scrolldown();
+        });
     } else {
-        // Use requestAnimationFrame and setTimeout for extra safety
-        requestAnimationFrame(() => setTimeout(Scrolldown, 100));
+        requestAnimationFrame(() => setTimeout(() => {
+            removeShareAndClearButtons();
+            Scrolldown();
+        }, 100));
     }
     </script>
     """)
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7861)
+    demo.launch(server_name="0.0.0.0", server_port=7861, css=css, js=js_path)

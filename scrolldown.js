@@ -1,51 +1,40 @@
 function Scrolldown() {
-    const findScrollArea = (root) => {
-        if (!root) return null;
-        const candidates = Array.from(root.querySelectorAll('*')).filter(el => {
-            const style = window.getComputedStyle(el);
-            return el.scrollHeight > el.clientHeight && (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'overlay');
-        });
-        return candidates.length ? candidates[candidates.length - 1] : null;
-    };
-
     const root = document.getElementById('chatbot');
     if (!root) {
-        setTimeout(Scrolldown, 500);
+        setTimeout(Scrolldown, 300);
         return;
     }
 
-    let targetNode = findScrollArea(root);
-    
-    if (!targetNode) {
-        let attempts = 0;
-        const checkInterval = setInterval(() => {
-            targetNode = findScrollArea(root);
-            if (targetNode) {
-                clearInterval(checkInterval);
-                attachObserver(targetNode);
-            }
-            attempts++;
-            if (attempts > 40) {
-                clearInterval(checkInterval);
-            }
-        }, 100);
-        return;
-    }
-
-    attachObserver(targetNode);
-}
-
-function attachObserver(targetNode) {
-    targetNode.scrollTop = targetNode.scrollHeight;
-    const config = { attributes: true, childList: true, subtree: true };
-    const callback = () => {
-        targetNode.scrollTop = targetNode.scrollHeight;
+    const findScrollArea = () => {
+        const scrollables = Array.from(root.querySelectorAll('*')).filter(el => el.scrollHeight > el.clientHeight);
+        if (!scrollables.length) return null;
+        return scrollables.reverse().find(el => typeof el.scrollTop === 'number') || null;
     };
-    const observer = new MutationObserver(callback);
-    observer.observe(targetNode, config);
+
+    const findLatestMessage = () => {
+        return root.querySelector('.message-row:last-child, .chatbot-message:last-child, .chatbot-card:last-child, .generated-message:last-child, .message:last-child');
+    };
+
+    const scrollBottom = () => {
+        const latest = findLatestMessage();
+        if (latest) {
+            latest.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
+        }
+
+        const targetNode = findScrollArea() || root;
+        if (targetNode) {
+            targetNode.scrollTop = targetNode.scrollHeight;
+        }
+    };
+
+    scrollBottom();
+    setTimeout(scrollBottom, 100);
+    setTimeout(scrollBottom, 300);
+
+    const observer = new MutationObserver(scrollBottom);
+    observer.observe(root, { childList: true, subtree: true });
 }
 
-// Call immediately
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', Scrolldown);
 } else {

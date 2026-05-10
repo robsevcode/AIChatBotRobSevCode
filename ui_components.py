@@ -50,10 +50,25 @@ def build_chat_ui(demo=None):
         return content
 
     def history_dicts_to_chatbot(history):
+        if history is None:
+            return []
+
         chatbot_value = []
 
-        user_text = None
         for msg in history:
+            if isinstance(msg, (list, tuple)):
+                # Support legacy Gradio 3.x pair format
+                user_text = msg[0] if len(msg) > 0 else ""
+                assistant_text = msg[1] if len(msg) > 1 else ""
+                if user_text:
+                    chatbot_value.append({"role": "user", "content": user_text})
+                if assistant_text:
+                    chatbot_value.append({"role": "assistant", "content": assistant_text})
+                continue
+
+            if not isinstance(msg, dict):
+                continue
+
             role = msg.get("role")
             content = msg.get("content", "")
             if isinstance(content, tuple) and len(content) == 1 and isinstance(content[0], str):
@@ -61,17 +76,8 @@ def build_chat_ui(demo=None):
             if isinstance(content, dict) and content.get("type") == "image":
                 content = content.get("path", "")
 
-            if role == "user":
-                user_text = content
-            elif role == "assistant":
-                if user_text is None:
-                    chatbot_value.append(["", content])
-                else:
-                    chatbot_value.append([user_text, content])
-                    user_text = None
-
-        if user_text is not None:
-            chatbot_value.append([user_text, ""])
+            if role in ("user", "assistant"):
+                chatbot_value.append({"role": role, "content": content})
 
         return chatbot_value
 
@@ -128,7 +134,8 @@ def build_chat_ui(demo=None):
                 height=700,
                 elem_id="chatbot",
                 value=history_dicts_to_chatbot(chat_data.get("history", [])),
-                avatar_images=("assets/user.png", character_avatar)  # (user, bot)
+                avatar_images=("assets/user.png", character_avatar),  # (user, bot)
+                buttons=[]
             )
             msg_box = gr.Textbox(label="Message")
 
@@ -193,7 +200,15 @@ def build_chat_ui(demo=None):
         history = chat_data["history"]
         system_prompt = metadata["system_prompt"]
         character_avatar = chat_backend.get_avatar_file_path(name)
-        return gr.update(value=history_dicts_to_chatbot(history)), name, gr.update(value=system_prompt), gr.update(value=character_avatar), gr.update(avatar_images=("assets/user.png", character_avatar))
+        return (
+            gr.update(
+                value=history_dicts_to_chatbot(history),
+                avatar_images=("assets/user.png", character_avatar)
+            ),
+            name,
+            gr.update(value=system_prompt),
+            gr.update(value=character_avatar),
+        )
 
     def update_system_prompt(new_prompt, name):
         if not name:
@@ -351,7 +366,7 @@ def build_chat_ui(demo=None):
     chat_list.change(
         switch_chat,
         [chat_list],
-        [chatbot, current_chat, system_prompt_display, character_image, chatbot],
+        [chatbot, current_chat, system_prompt_display, character_image],
         scroll_to_output=True,
         show_progress="hidden"
     )
