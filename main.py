@@ -91,6 +91,15 @@ with gr.Blocks(title="AI Chat bot") as demo:
         .gradio-container .fixed-height {
         max-height: none !important;
         }
+
+    /* Make bold-italic action text pure white for easier reading */
+    .gradio-container .markdown strong em,
+    .gradio-container .markdown em strong,
+    .gradio-container strong em,
+    .gradio-container em strong {
+        color: #ffffff !important;
+    }
+
     /* Hide the residual Share button for avatars/messages */
     .gradio-container button[title="Share"],
     .gradio-container [aria-label="Share"] {
@@ -175,4 +184,4 @@ with gr.Blocks(title="AI Chat bot") as demo:
     """)
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7861, css=css, js=js_path)
+    demo.launch(server_name="0.0.0.0", server_port=7860, css=css, js=js_path)
