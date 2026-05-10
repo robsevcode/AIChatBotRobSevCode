@@ -28,11 +28,22 @@ os.makedirs(BACKUP_CHAT_FOLDER, exist_ok=True)
 
 def italics_to_bold(text: str) -> str:
     """
-    Converts Markdown italics (*text* or _text_) to bold (**text**).
+    Converts action-style markup to bold-italic text.
+
+    Supported action formatting:
+    - *text* or _text_
+    - (text)
+    - [text]
     """
-    text = re.sub(r'(?<!\*)\*(?!\*)(.*?)\*(?!\*)', r'**\1**', text)  # *text*
-    text = re.sub(r'_(.*?)_', r'**\1**', text)  # _text_
+    if not isinstance(text, str):
+        return text
+
+    text = re.sub(r'(?<!\*)\*(?!\*)(.*?)\*(?!\*)', r'***\1***', text)  # *text*
+    text = re.sub(r'_(.*?)_', r'***\1***', text)  # _text_
+    text = re.sub(r'\(([^)]+)\)', r'***\1***', text)
+    text = re.sub(r'\[([^\]]+)\]', r'***\1***', text)
     return text
+
 
 def get_character_list():
     logging.debug("get_character_list")

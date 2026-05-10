@@ -17,10 +17,20 @@ logging.basicConfig(level=logging.DEBUG) # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 def italics_to_bold(text):
     """
-    Converts Markdown italics (*text* or _text_) to bold (**text**)
+    Converts action-style markup to bold-italic text.
+
+    Supported action formatting:
+    - *text* or _text_
+    - (text)
+    - [text]
     """
-    text = re.sub(r'(?<!\*)\*(?!\*)(.*?)\*(?!\*)', r'**\1**', text)
-    text = re.sub(r'_(.*?)_', r'**\1**', text)
+    if not isinstance(text, str):
+        return text
+
+    text = re.sub(r'(?<!\*)\*(?!\*)(.*?)\*(?!\*)', r'***\1***', text)
+    text = re.sub(r'_(.*?)_', r'***\1***', text)
+    text = re.sub(r'\(([^)]+)\)', r'***\1***', text)
+    text = re.sub(r'\[([^\]]+)\]', r'***\1***', text)
     return text
 
 def build_chat_ui(demo=None):
@@ -77,6 +87,8 @@ def build_chat_ui(demo=None):
                 content = content.get("path", "")
 
             if role in ("user", "assistant"):
+                if isinstance(content, str):
+                    content = italics_to_bold(content)
                 chatbot_value.append({"role": role, "content": content})
 
         return chatbot_value
@@ -248,6 +260,8 @@ def build_chat_ui(demo=None):
                 content = {"type": "image", "path": content[0]}
             elif isinstance(content, str) and os.path.splitext(content)[1].lower() in (".png", ".jpg", ".jpeg"):
                 content = {"type": "image", "path": content}
+            elif isinstance(content, str):
+                content = italics_to_bold(content)
             elif isinstance(content, dict) and content.get("type") == "image":
                 pass
 
