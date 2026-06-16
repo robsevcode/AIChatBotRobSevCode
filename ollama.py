@@ -33,7 +33,7 @@ def _normalize_content_for_ollama(content):
 def chat_with_ollama(system_prompt, history, history_input):
     logging.debug("Calling Ollama")
     url = "http://localhost:11434/api/chat"
-    payload = {"model": "gemma3:4b", "messages": []}
+    payload = {"model": "hf.co/TheDrummer/Tiger-Gemma-9B-v2-GGUF:Q2_K", "messages": []}
 
     # Add system prompt
     if system_prompt:
