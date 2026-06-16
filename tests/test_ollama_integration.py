@@ -40,6 +40,15 @@ class TestOllamaIntegration(unittest.TestCase):
         self.assertIsInstance(result[-1], list)
         self.assertTrue(result[-1][-1].get("content"), "The final assistant message should contain text")
 
+    def test_normalize_ollama_content(self):
+        self.assertEqual(ollama._normalize_content_for_ollama("hello"), "hello")
+        self.assertEqual(ollama._normalize_content_for_ollama(("hello",)), "hello")
+        self.assertEqual(ollama._normalize_content_for_ollama([{"type": "text", "text": "hello"}]), "hello")
+        self.assertEqual(ollama._normalize_content_for_ollama([{"type": "image", "path": "avatar.png"}]), "avatar.png")
+        self.assertEqual(ollama._normalize_content_for_ollama({"type": "text", "text": "hello"}), "hello")
+        self.assertEqual(ollama._normalize_content_for_ollama({"type": "image", "path": "avatar.png"}), "avatar.png")
+        self.assertEqual(ollama._normalize_content_for_ollama(["hello", {"type": "text", "text": " world"}]), "hello world")
+
     def test_save_chat_persists_history(self):
         import tempfile
 
