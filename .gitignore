@@ -13,3 +13,6 @@ __pycache__/*.*
 *.pyc
 __pycache__
 *.code-workspace
+/.continue/*
+/.continue
+/.continue/*/

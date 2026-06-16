@@ -146,7 +146,7 @@ def get_avatar_file_path(name: str):
     character_folder = os.path.join(CHAT_FOLDER, name)
     avatar_folder = os.path.join(character_folder, "assets")
     logging.debug("Getting metadata path for: "+ name)
-    return os.path.join(avatar_folder, "avatar.png")
+    return os.path.join(avatar_folder, "Avatar.png")
 
 # ------------------------
 # Character metadata

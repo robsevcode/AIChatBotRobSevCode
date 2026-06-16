@@ -4,6 +4,32 @@ import logging
 
 logging.basicConfig(level=logging.INFO) # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
+def _normalize_content_for_ollama(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, tuple) and len(content) == 1 and isinstance(content[0], str):
+        return content[0]
+    if isinstance(content, list):
+        if len(content) == 1 and isinstance(content[0], dict):
+            return _normalize_content_for_ollama(content[0])
+        parts = []
+        for item in content:
+            normalized = _normalize_content_for_ollama(item)
+            if isinstance(normalized, str):
+                parts.append(normalized)
+        return "".join(parts) if parts else None
+    if isinstance(content, dict):
+        if content.get("type") == "text":
+            return content.get("text", "")
+        if content.get("type") == "image":
+            return content.get("path", "")
+        if "text" in content and isinstance(content["text"], str):
+            return content["text"]
+        if "content" in content and isinstance(content["content"], str):
+            return content["content"]
+    return None
+
+
 def chat_with_ollama(system_prompt, history, history_input):
     logging.debug("Calling Ollama")
     url = "http://localhost:11434/api/chat"
@@ -15,8 +41,19 @@ def chat_with_ollama(system_prompt, history, history_input):
 
     # Add history
     for message_history in history_input:
-        if "role" in message_history and "content" in message_history:
-            payload["messages"].append(message_history)
+        if not isinstance(message_history, dict):
+            continue
+        if "role" not in message_history or "content" not in message_history:
+            continue
+
+        content = _normalize_content_for_ollama(message_history["content"])
+        if content is None:
+            continue
+
+        payload["messages"].append({
+            "role": message_history["role"],
+            "content": content
+        })
 
     if payload["messages"] and payload["messages"][-1]["role"] == "assistant":
         logging.debug("Last message was: %s", payload["messages"][-1]["content"])
